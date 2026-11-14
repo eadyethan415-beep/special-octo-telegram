@@ -1,0 +1,248 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local player = Players.LocalPlayer
+-- ==========================================
+-- CONFIGURATION: PUT YOUR 8 ANIMATION IDS HERE
+-- ==========================================
+local EMOTES = {
+	{ Name = "bang male", AnimationId = "rbxassetid://83052081218673", Looped = true },
+	{ Name = "get banged", AnimationId = "rbxassetid://108656704819058", Looped = true },
+	{ Name = "male blow job", AnimationId = "rbxassetid://85315638387885", Looped = true },
+	{ Name = "suck it", AnimationId = "rbxassetid://104097254786806", Looped = true },
+	{ Name = "get rided cowgirl", AnimationId = "rbxassetid://108686668593767", Looped = true },
+	{ Name = "riding it", AnimationId = "rbxassetid://134562950181232", Looped = true },
+	{ Name = "cowgirl2.0", AnimationId = "rbxassetid://85587893059829", Looped = true },
+	{ Name = "keeping them on", AnimationId = "rbxassetid://137099299882997", Looped = true },
+}
+local TOGGLE_KEY = Enum.KeyCode.G -- Keybind to show/hide the panel
+-- ==========================================
+local currentTrack = nil
+local activeIndex = nil
+local playbackSpeed = 1.0
+local uiButtons = {}
+-- Stop active animation cleanly
+local function stopCurrentEmote()
+	if currentTrack then
+		currentTrack:Stop(0.2)
+		currentTrack:Destroy()
+		currentTrack = nil
+	end
+	activeIndex = nil
+	-- Reset button visuals
+	for idx, btnData in pairs(uiButtons) do
+		TweenService:Create(btnData.Button, TweenInfo.new(0.2), {
+			BackgroundColor3 = Color3.fromRGB(28, 31, 38)
+		}):Play()
+		TweenService:Create(btnData.Stroke, TweenInfo.new(0.2), {
+			Color = Color3.fromRGB(0, 0, 0) -- Inner rim black
+		}):Play()
+		btnData.Status.Text = "PLAY"
+		btnData.Status.TextColor3 = Color3.fromRGB(135, 145, 160)
+	end
+end
+-- Play or toggle an emote by index
+local function toggleEmote(index)
+	if activeIndex == index then
+		stopCurrentEmote()
+		return
+	end
+	stopCurrentEmote()
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+	if not animator then return end
+	local emoteData = EMOTES[index]
+	local anim = Instance.new("Animation")
+	anim.AnimationId = emoteData.AnimationId
+	local success, track = pcall(function()
+		return animator:LoadAnimation(anim)
+	end)
+	if success and track then
+		track.Priority = Enum.AnimationPriority.Action
+		track.Looped = emoteData.Looped
+		track:Play(0.2)
+		track:AdjustSpeed(playbackSpeed)
+		currentTrack = track
+		activeIndex = index
+		-- Highlight active button
+		local btnData = uiButtons[index]
+		if btnData then
+			TweenService:Create(btnData.Button, TweenInfo.new(0.2), {
+				BackgroundColor3 = Color3.fromRGB(36, 46, 66)
+			}):Play()
+			TweenService:Create(btnData.Stroke, TweenInfo.new(0.2), {
+				Color = Color3.fromRGB(88, 130, 255)
+			}):Play()
+			btnData.Status.Text = "ACTIVE"
+			btnData.Status.TextColor3 = Color3.fromRGB(110, 155, 255)
+		end
+		track.Stopped:Connect(function()
+			if activeIndex == index then
+				stopCurrentEmote()
+			end
+		end)
+	else
+		warn("Failed to load animation ID: " .. tostring(emoteData.AnimationId))
+	end
+end
+-- ==========================================
+-- BUILD SHARP 8-SLOT UI (NO ROUNDED CORNERS)
+-- ==========================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "SharpEmoteUI8"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = player:WaitForChild("PlayerGui")
+-- Main Card
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 270, 0, 360)
+mainFrame.Position = UDim2.new(1, -290, 0.5, -180)
+mainFrame.BackgroundColor3 = Color3.fromRGB(18, 20, 25)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+-- Outer Rim (White, Sharp)
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = Color3.fromRGB(255, 255, 255)
+mainStroke.Thickness = 1.5
+mainStroke.Parent = mainFrame
+-- Draggable Header
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 40)
+header.BackgroundColor3 = Color3.fromRGB(23, 26, 32)
+header.BorderSizePixel = 0
+header.Parent = mainFrame
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -60, 1, 0)
+title.Position = UDim2.new(0, 14, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "EMOTES (8)"
+title.TextColor3 = Color3.fromRGB(240, 244, 250)
+title.Font = Enum.Font.SciFi
+title.TextSize = 14
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = header
+local keyHint = Instance.new("TextLabel")
+keyHint.Size = UDim2.new(0, 42, 0, 20)
+keyHint.Position = UDim2.new(1, -52, 0.5, -10)
+keyHint.BackgroundColor3 = Color3.fromRGB(34, 38, 48)
+keyHint.Text = "[G]"
+keyHint.TextColor3 = Color3.fromRGB(150, 160, 175)
+keyHint.Font = Enum.Font.GothamBold
+keyHint.TextSize = 11
+keyHint.Parent = header
+-- Dragging Support
+local dragging, dragInput, dragStart, startPos
+header.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = mainFrame.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+header.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		dragInput = input
+	end
+end)
+UserInputService.InputChanged:Connect(function(input)
+	if input == dragInput and dragging then
+		local delta = input.Position - dragStart
+		mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end)
+-- Scrollable Emote Buttons Container
+local listFrame = Instance.new("ScrollingFrame")
+listFrame.Size = UDim2.new(1, -20, 0, 250)
+listFrame.Position = UDim2.new(0, 10, 0, 48)
+listFrame.BackgroundTransparency = 1
+listFrame.BorderSizePixel = 0
+listFrame.CanvasSize = UDim2.new(0, 0, 0, 8 * 52)
+listFrame.ScrollBarThickness = 3
+listFrame.Parent = mainFrame
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0, 6)
+layout.Parent = listFrame
+for i, emote in ipairs(EMOTES) do
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, -4, 0, 46)
+	btn.BackgroundColor3 = Color3.fromRGB(28, 31, 38)
+	btn.AutoButtonColor = false
+	btn.Text = ""
+	btn.Parent = listFrame
+	-- Inner Rim (Black, Sharp)
+	local btnStroke = Instance.new("UIStroke")
+	btnStroke.Color = Color3.fromRGB(0, 0, 0)
+	btnStroke.Thickness = 1.5
+	btnStroke.Parent = btn
+	local nameLbl = Instance.new("TextLabel")
+	nameLbl.Size = UDim2.new(0.65, 0, 1, 0)
+	nameLbl.Position = UDim2.new(0, 12, 0, 0)
+	nameLbl.BackgroundTransparency = 1
+	nameLbl.Text = emote.Name
+	nameLbl.TextColor3 = Color3.fromRGB(235, 240, 248)
+	nameLbl.Font = Enum.Font.GothamBold
+	nameLbl.TextSize = 13
+	nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+	nameLbl.Parent = btn
+	local statusLbl = Instance.new("TextLabel")
+	statusLbl.Size = UDim2.new(0.3, -12, 1, 0)
+	statusLbl.Position = UDim2.new(0.7, 0, 0, 0)
+	statusLbl.BackgroundTransparency = 1
+	statusLbl.Text = "PLAY"
+	statusLbl.TextColor3 = Color3.fromRGB(135, 145, 160)
+	statusLbl.Font = Enum.Font.SciFi
+	statusLbl.TextSize = 11
+	statusLbl.TextXAlignment = Enum.TextXAlignment.Right
+	statusLbl.Parent = btn
+	-- Hover effect
+	btn.MouseEnter:Connect(function()
+		if activeIndex ~= i then
+			TweenService:Create(btn, TweenInfo.new(0.15), {
+				BackgroundColor3 = Color3.fromRGB(35, 39, 48)
+			}):Play()
+		end
+	end)
+	btn.MouseLeave:Connect(function()
+		if activeIndex ~= i then
+			TweenService:Create(btn, TweenInfo.new(0.15), {
+				BackgroundColor3 = Color3.fromRGB(28, 31, 38)
+			}):Play()
+		end
+	end)
+	btn.MouseButton1Click:Connect(function()
+		toggleEmote(i)
+	end)
+	uiButtons[i] = {
+		Button = btn,
+		Stroke = btnStroke,
+		Status = statusLbl
+	}
+end
+-- Bottom Controls Row (Custom Speed TextBox + Stop Button)
+local bottomRow = Instance.new("Frame")
+bottomRow.Size = UDim2.new(1, -24, 0, 36)
+bottomRow.Position = UDim2.new(0, 12, 1, -44)
+bottomRow.BackgroundTransparency = 1
+bottomRow.Parent = mainFrame
+local speedBox = Instance.new("TextBox")
+speedBox.Size = UDim2.new(0.48, 0, 1, 0)
+speedBox.BackgroundColor3 = Color3.fromRGB(28, 31, 38)
+speedBox.Text = "1.0"
+speedBox.PlaceholderText = "Speed (e.g. 1.0)"
+speedBox.TextColor3 = Color3.fromRGB(200, 210, 225)
+speedBox.PlaceholderColor3 = Color3.fromRGB(110, 115, 125)
+speedBox.Font = Enum.Font.GothamBold
+speedBox.TextSize = 12
+speedBox.ClearTextOnFocus = false
+speedBox.Parent = bottomRow
+local speedStroke = Instance.new("UIStroke")
+speedStroke.Color = Color3.fromRGB(0, 0, 0)
+speedStroke.Thickness = 1.2
+speedStroke.Parent = speedBox
